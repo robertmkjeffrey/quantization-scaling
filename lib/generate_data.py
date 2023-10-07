@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from typing import Union
 from abc import ABC, abstractmethod
 
 
@@ -35,21 +36,27 @@ class MultitaskSparseParity(Sampler):
 
         self.task_masks = self._n_bit_mask(self.n_control_bits, self.n_data_bits, k)
 
-    def generate_data(self, n_samples: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def generate_data(
+        self, n_samples: int, force_task: Union[int, None] = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         ## Generate data bits.
         x_data = torch.randint(
             2, (n_samples, self.n_data_bits)
         )  # , names=("n_samples", "n_data"))
 
         ## Generate task bits
-        probs = np.array(
-            [x ** (-(self.alpha + 1)) for x in range(1, self.n_control_bits + 1)]
-        )
-        probs = probs / sum(probs)
-        x_task_index = np.random.choice(self.n_control_bits, size=n_samples, p=probs)
+        if force_task is None:
+            probs = np.array(
+                [x ** (-(self.alpha + 1)) for x in range(1, self.n_control_bits + 1)]
+            )
+            probs = probs / sum(probs)
+            x_task_index = np.random.choice(
+                self.n_control_bits, size=n_samples, p=probs
+            )
+        else:
+            x_task_index = np.array([force_task] * n_samples)
         # One hot encode task indicies
-        x_control = np.zeros((n_samples, self.n_control_bits))
-        x_control[np.arange(n_samples), x_task_index] = 1
+        x_control = self._one_hot_encode(x_task_index)
         # plt.hist(x_task_index, bins= self.n_control_bits)
 
         ## Combine task and data bits.
@@ -60,6 +67,12 @@ class MultitaskSparseParity(Sampler):
             torch.sum(self.task_masks[x_task_index] * x_data, axis=1), 2
         )
         return X, y
+
+    def _one_hot_encode(self, task_indices):
+        n_samples = task_indices.shape[0]
+        result = np.zeros(shape=(n_samples, self.n_control_bits))
+        result[np.arange(n_samples), task_indices] = 1
+        return result
 
     def _n_bit_mask(self, n_samples: int, n_possible: int, n_set: int):
         rand_mat = torch.rand(n_samples, n_possible)
