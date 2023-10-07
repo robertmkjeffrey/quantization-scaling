@@ -24,12 +24,16 @@ class MultitaskSparseParity(Sampler):
     n_data_bits: int  # Size of data vector
     n_control_bits: int  # Number of tasks
     alpha: float  # Sparsity parameter
+    k: int  # Number of bits used in each task mask.
 
-    def __init__(self, n_control_bits, n_data_bits, alpha):
+    def __init__(self, n_control_bits, n_data_bits, k, alpha):
         self.n_data_bits = n_data_bits
         self.n_control_bits = n_control_bits
         self.alpha = alpha
+        self.k = k
         self.bits = n_data_bits + n_control_bits
+
+        self.task_masks = self._n_bit_mask(self.n_control_bits, self.n_data_bits, k)
 
     def generate_data(self, n_samples: int) -> tuple[torch.Tensor, torch.Tensor]:
         ## Generate data bits.
@@ -52,11 +56,12 @@ class MultitaskSparseParity(Sampler):
         X = torch.cat((torch.tensor(x_control), torch.tensor(x_data)), axis=1)
 
         ## Calculate task outputs.
-        task_masks = torch.randint(2, (self.n_control_bits, self.n_data_bits))
-        y = torch.remainder(torch.sum(task_masks[x_task_index] * x_data, axis=1), 2)
+        y = torch.remainder(
+            torch.sum(self.task_masks[x_task_index] * x_data, axis=1), 2
+        )
         return X, y
 
-    def _n_bit_mask(self, n_samples, n_possible, n_set):
+    def _n_bit_mask(self, n_samples: int, n_possible: int, n_set: int):
         rand_mat = torch.rand(n_samples, n_possible)
         k_th_quant = torch.topk(rand_mat, n_set, largest=False)[0][:, -1:]
         bool_tensor = rand_mat <= k_th_quant
